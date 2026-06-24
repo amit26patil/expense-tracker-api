@@ -4,3 +4,5 @@
 /data/
 **/**/__init__.py
 **/__pycache__/**
+OpTransactionHistory22-06-2026.xls
+parse_excel.py

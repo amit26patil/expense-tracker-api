@@ -1,12 +1,23 @@
-from pathlib import Path
-
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 
-from app.routes import meta, transactions, transactions_summary
+from app.routes import meta, transactions, transactions_summary, upload
 
-app = FastAPI(title="Expense Tracker API", version="1.0.0")
+app = FastAPI(
+    title="Expense Tracker API",
+    version="1.0.0",
+    description="API for managing expense transactions, summaries, and bank statement uploads.",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    openapi_tags=[
+        {"name": "health", "description": "Health check"},
+        {"name": "transactions", "description": "CRUD operations on transactions"},
+        {"name": "transaction_summary", "description": "Monthly summaries and details"},
+        {"name": "meta", "description": "Categories and currencies"},
+        {"name": "upload", "description": "Upload and parse bank statement Excel files"},
+    ],
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +30,7 @@ app.add_middleware(
 app.include_router(transactions_summary.summary_router)
 app.include_router(transactions.router)
 app.include_router(meta.router)
+app.include_router(upload.router)
 
 
 

@@ -1,7 +1,6 @@
 from collections import defaultdict
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from app import google_sheet_store as excel_store
 from app.models import (
@@ -10,21 +9,24 @@ from app.models import (
     MonthDetail,
     MonthSummary,
     Transaction,
-    TransactionCreate,
-    TransactionUpdate,
     TransactionType,
 )
 
 summary_router = APIRouter(
     prefix="/api/transaction-summary",
-    tags=["transaction_summary"]
+    tags=["transaction_summary"],
 )
 
 
-@summary_router.get("/summary/month", response_model=MonthSummary)
+@summary_router.get(
+    "/summary/month",
+    response_model=MonthSummary,
+    summary="Monthly summary",
+    description="Get a summary of all transactions for a given month, including totals by category and daily breakdowns.",
+)
 def get_month_summary(
-    year: int = Query(..., ge=2000),
-    month: int = Query(..., ge=1, le=12),
+    year: int = Query(..., ge=2000, description="Year (e.g. 2026)"),
+    month: int = Query(..., ge=1, le=12, description="Month (1-12)"),
 ) -> MonthSummary:
     transactions = excel_store.list_transactions(year=year, month=month)
 
@@ -76,12 +78,16 @@ def get_month_summary(
     )
 
 
-@summary_router.get("/detail/monthly", response_model=MonthDetail)
+@summary_router.get(
+    "/detail/monthly",
+    response_model=MonthDetail,
+    summary="Monthly detail by category",
+    description="Get a detailed breakdown of transactions for a given month, grouped by category with per-category totals.",
+)
 def get_month_detail(
-    year: int = Query(..., ge=2000),
-    month: int = Query(..., ge=1, le=12),
+    year: int = Query(..., ge=2000, description="Year (e.g. 2026)"),
+    month: int = Query(..., ge=1, le=12, description="Month (1-12)"),
 ) -> MonthDetail:
-    print(f"Fetching month detail for {year}-{month}")
     transactions = excel_store.list_transactions(year=year, month=month)
 
     total_income: dict[str, float] = defaultdict(float)
