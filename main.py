@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import meta, transactions, transactions_summary, upload
+from app.routes import auth, meta, transactions, transactions_summary, upload
 
 app = FastAPI(
     title="Expense Tracker API",
@@ -27,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(transactions_summary.summary_router)
 app.include_router(transactions.router)
 app.include_router(meta.router)

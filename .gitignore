@@ -1,6 +1,7 @@
 
 /package/
 /expense-tracker-500203-1d10858a70af.json
+/expense-tracker-client.json
 /data/
 **/**/__init__.py
 **/__pycache__/**
