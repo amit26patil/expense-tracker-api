@@ -8,7 +8,7 @@ from typing import Optional
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-from app.models import Currency, Transaction, TransactionCreate, TransactionType, TransactionUpdate
+from app.models import BulkTransactionResponse, Currency, Transaction, TransactionCreate, TransactionType, TransactionUpdate
 
 CREDENTIALS_PATH = Path(__file__).resolve().parent.parent / "expense-tracker-500203-1d10858a70af.json"
 SPREADSHEET_NAME = "temp_expense_sheet"
@@ -23,20 +23,21 @@ TRANSACTION_HEADERS = [
     "description",
     "created_at",
 ]
-CATEGORY_HEADERS = ["name", "type"]
+CATEGORY_HEADERS = ["name", "type", "keywords"]
+SETTINGS_HEADERS = ["key", "value"]
 
 DEFAULT_CATEGORIES = [
-    ("Food", "expense"),
-    ("Transport", "expense"),
-    ("Shopping", "expense"),
-    ("Bills", "expense"),
-    ("Entertainment", "expense"),
-    ("Healthcare", "expense"),
-    ("Other Expense", "expense"),
-    ("Salary", "income"),
-    ("Freelance", "income"),
-    ("Investment", "income"),
-    ("Other Income", "income"),
+    ("Food", "expense", ""),
+    ("Transport", "expense", ""),
+    ("Shopping", "expense", ""),
+    ("Bills", "expense", ""),
+    ("Entertainment", "expense", ""),
+    ("Healthcare", "expense", ""),
+    ("Other Expense", "expense", ""),
+    ("Salary", "income", ""),
+    ("Freelance", "income", ""),
+    ("Investment", "income", ""),
+    ("Other Income", "income", ""),
 ]
 
 _lock = threading.Lock()
@@ -74,8 +75,15 @@ def _ensure_sheets() -> None:
     except gspread.exceptions.WorksheetNotFound:
         cat_sheet = spreadsheet.add_worksheet(title="Categories", rows=1000, cols=len(CATEGORY_HEADERS))
         cat_sheet.append_row(CATEGORY_HEADERS)
-        for name, cat_type in DEFAULT_CATEGORIES:
-            cat_sheet.append_row([name, cat_type])
+        for name, cat_type, keywords in DEFAULT_CATEGORIES:
+            cat_sheet.append_row([name, cat_type, keywords])
+
+    try:
+        settings_sheet = spreadsheet.worksheet("Settings")
+    except gspread.exceptions.WorksheetNotFound:
+        settings_sheet = spreadsheet.add_worksheet(title="Settings", rows=100, cols=len(SETTINGS_HEADERS))
+        settings_sheet.append_row(SETTINGS_HEADERS)
+        settings_sheet.append_row(["default_currency", "INR"])
 
 
 def _get_transactions_worksheet() -> gspread.Worksheet:
@@ -165,6 +173,30 @@ def create_transaction(payload: TransactionCreate) -> Transaction:
         return Transaction(id=tx_id, **payload.model_dump())
 
 
+def create_bulk_transactions(payloads: list[TransactionCreate]) -> BulkTransactionResponse:
+    with _lock:
+        worksheet = _get_transactions_worksheet()
+        tx_id = _next_id(worksheet)
+        now = datetime.now().isoformat(timespec="seconds")
+        rows = []
+        created: list[Transaction] = []
+        for payload in payloads:
+            rows.append([
+                tx_id,
+                payload.date.isoformat(),
+                payload.type.value,
+                payload.category,
+                payload.amount,
+                payload.currency.value,
+                payload.description,
+                now,
+            ])
+            created.append(Transaction(id=tx_id, **payload.model_dump()))
+            tx_id += 1
+        worksheet.append_rows(rows)
+        return BulkTransactionResponse(count=len(created), transactions=created)
+
+
 def update_transaction(tx_id: int, payload: TransactionUpdate) -> Optional[Transaction]:
     with _lock:
         worksheet = _get_transactions_worksheet()
@@ -219,11 +251,75 @@ def list_categories(tx_type: Optional[str] = None) -> list[dict[str, str]]:
             if not row[0]:
                 continue
             name, cat_type = str(row[0]), str(row[1])
+            keywords = str(row[2] or "") if len(row) > 2 else ""
             if tx_type and cat_type != tx_type:
                 continue
-            categories.append({"name": name, "type": cat_type})
+            categories.append({"name": name, "type": cat_type, "keywords": keywords})
         return categories
+
+
+def create_category(name: str, cat_type: str, keywords: str = "") -> dict[str, str]:
+    with _lock:
+        worksheet = _get_categories_worksheet()
+        all_values = worksheet.get_all_values()
+        for row in all_values[1:]:
+            if row[0] == name and row[1] == cat_type:
+                return {"error": "Category already exists"}
+        worksheet.append_row([name, cat_type, keywords])
+        return {"name": name, "type": cat_type, "keywords": keywords}
+
+
+def update_category(old_name: str, new_name: str, cat_type: str, keywords: Optional[str] = None) -> dict[str, str]:
+    with _lock:
+        worksheet = _get_categories_worksheet()
+        all_values = worksheet.get_all_values()
+        for idx, row in enumerate(all_values[1:], start=2):
+            if row[0] == old_name and row[1] == cat_type:
+                worksheet.update_cell(idx, 1, new_name)
+                if keywords is not None:
+                    worksheet.update_cell(idx, 3, keywords)
+                else:
+                    keywords = str(row[2] or "") if len(row) > 2 else ""
+                return {"name": new_name, "type": cat_type, "keywords": keywords}
+        return {"error": "Category not found"}
+
+
+def delete_category(name: str, cat_type: str) -> bool:
+    with _lock:
+        worksheet = _get_categories_worksheet()
+        all_values = worksheet.get_all_values()
+        for idx, row in enumerate(all_values[1:], start=2):
+            if row[0] == name and row[1] == cat_type:
+                worksheet.delete_rows(idx, idx)
+                return True
+        return False
 
 
 def list_currencies() -> list[str]:
     return [c.value for c in Currency]
+
+
+def get_default_currency() -> str:
+    with _lock:
+        _ensure_sheets()
+        spreadsheet = _get_spreadsheet()
+        settings_sheet = spreadsheet.worksheet("Settings")
+        all_values = settings_sheet.get_all_values()
+        for row in all_values[1:]:
+            if row[0] == "default_currency":
+                return row[1] if row[1] else "INR"
+        return "INR"
+
+
+def set_default_currency(currency: str) -> str:
+    with _lock:
+        _ensure_sheets()
+        spreadsheet = _get_spreadsheet()
+        settings_sheet = spreadsheet.worksheet("Settings")
+        all_values = settings_sheet.get_all_values()
+        for idx, row in enumerate(all_values[1:], start=2):
+            if row[0] == "default_currency":
+                settings_sheet.update_cell(idx, 2, currency)
+                return currency
+        settings_sheet.append_row(["default_currency", currency])
+        return currency

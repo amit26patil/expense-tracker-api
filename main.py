@@ -29,7 +29,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(transactions_summary.summary_router)
-app.include_router(transactions.router)
+app.include_router(transactions.router) 
 app.include_router(meta.router)
 app.include_router(upload.router)
 

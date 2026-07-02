@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import logging
 import threading
 from datetime import date, datetime
 from pathlib import Path
@@ -7,11 +7,12 @@ from typing import Optional
 
 from openpyxl import Workbook, load_workbook
 
-from app.models import Currency, Transaction, TransactionCreate, TransactionType, TransactionUpdate
+from app.models import BulkTransactionResponse, Currency, Transaction, TransactionCreate, TransactionType, TransactionUpdate
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 EXCEL_PATH = DATA_DIR / "expenses.xlsx"
 
+logger = logging.getLogger("uvicorn.error")
 TRANSACTION_HEADERS = [
     "id",
     "date",
@@ -22,20 +23,20 @@ TRANSACTION_HEADERS = [
     "description",
     "created_at",
 ]
-CATEGORY_HEADERS = ["name", "type"]
+CATEGORY_HEADERS = ["name", "type", "keywords"]
 
 DEFAULT_CATEGORIES = [
-    ("Food", "expense"),
-    ("Transport", "expense"),
-    ("Shopping", "expense"),
-    ("Bills", "expense"),
-    ("Entertainment", "expense"),
-    ("Healthcare", "expense"),
-    ("Other Expense", "expense"),
-    ("Salary", "income"),
-    ("Freelance", "income"),
-    ("Investment", "income"),
-    ("Other Income", "income"),
+    ("Food", "expense", ""),
+    ("Transport", "expense", ""),
+    ("Shopping", "expense", ""),
+    ("Bills", "expense", ""),
+    ("Entertainment", "expense", ""),
+    ("Healthcare", "expense", ""),
+    ("Other Expense", "expense", ""),
+    ("Salary", "income", ""),
+    ("Freelance", "income", ""),
+    ("Investment", "income", ""),
+    ("Other Income", "income", ""),
 ]
 
 _lock = threading.Lock()
@@ -53,8 +54,8 @@ def _ensure_workbook() -> None:
 
     cat_sheet = wb.create_sheet("Categories")
     cat_sheet.append(CATEGORY_HEADERS)
-    for name, cat_type in DEFAULT_CATEGORIES:
-        cat_sheet.append([name, cat_type])
+    for name, cat_type, keywords in DEFAULT_CATEGORIES:
+        cat_sheet.append([name, cat_type, keywords])
 
     wb.save(EXCEL_PATH)
 
@@ -145,6 +146,33 @@ def create_transaction(payload: TransactionCreate) -> Transaction:
         return Transaction(id=tx_id, **payload.model_dump())
 
 
+def create_bulk_transactions(payloads: list[TransactionCreate]) -> BulkTransactionResponse:
+    with _lock:
+        wb, sheet = _load_transactions_sheet()
+        tx_id = _next_id(sheet)
+        now = datetime.now().isoformat(timespec="seconds")
+        created: list[Transaction] = []
+        for payload in payloads:
+            logger.info(f"Creating transaction: txId: {tx_id}, date:{payload.date}, dateIso: {payload.date.isoformat()}, amount: {payload.amount}")
+            sheet.append(
+                [
+                    tx_id,
+                    payload.date.isoformat(),
+                    payload.type.value,
+                    payload.category,
+                    payload.amount,
+                    payload.currency.value,
+                    payload.description,
+                    now,
+                ]
+            )
+            created.append(Transaction(id=tx_id, **payload.model_dump()))
+            tx_id += 1
+        wb.save(EXCEL_PATH)
+        wb.close()
+        return BulkTransactionResponse(count=len(created), transactions=created)
+
+
 def update_transaction(tx_id: int, payload: TransactionUpdate) -> Optional[Transaction]:
     with _lock:
         wb, sheet = _load_transactions_sheet()
@@ -203,11 +231,67 @@ def list_categories(tx_type: Optional[str] = None) -> list[dict[str, str]]:
             if row[0] is None:
                 continue
             name, cat_type = str(row[0]), str(row[1])
+            keywords = str(row[2] or "") if len(row) > 2 else ""
             if tx_type and cat_type != tx_type:
                 continue
-            categories.append({"name": name, "type": cat_type})
+            categories.append({"name": name, "type": cat_type, "keywords": keywords})
         wb.close()
         return categories
+
+
+def create_category(name: str, cat_type: str, keywords: str = "") -> dict[str, str]:
+    with _lock:
+        _ensure_workbook()
+        wb = load_workbook(EXCEL_PATH)
+        sheet = wb["Categories"]
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row[0] is None:
+                continue
+            if str(row[0]) == name and str(row[1]) == cat_type:
+                wb.close()
+                return {"error": "Category already exists"}
+        sheet.append([name, cat_type, keywords])
+        wb.save(EXCEL_PATH)
+        wb.close()
+        return {"name": name, "type": cat_type, "keywords": keywords}
+
+
+def update_category(old_name: str, new_name: str, cat_type: str, keywords: Optional[str] = None) -> dict[str, str]:
+    with _lock:
+        _ensure_workbook()
+        wb = load_workbook(EXCEL_PATH)
+        sheet = wb["Categories"]
+        for idx, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+            if row[0].value is None:
+                continue
+            if str(row[0].value) == old_name and str(row[1].value) == cat_type:
+                sheet.cell(row=idx, column=1, value=new_name)
+                if keywords is not None:
+                    sheet.cell(row=idx, column=3, value=keywords)
+                else:
+                    keywords = str(row[2].value or "") if len(row) > 2 else ""
+                wb.save(EXCEL_PATH)
+                wb.close()
+                return {"name": new_name, "type": cat_type, "keywords": keywords}
+        wb.close()
+        return {"error": "Category not found"}
+
+
+def delete_category(name: str, cat_type: str) -> bool:
+    with _lock:
+        _ensure_workbook()
+        wb = load_workbook(EXCEL_PATH)
+        sheet = wb["Categories"]
+        for idx, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+            if row[0].value is None:
+                continue
+            if str(row[0].value) == name and str(row[1].value) == cat_type:
+                sheet.delete_rows(idx)
+                wb.save(EXCEL_PATH)
+                wb.close()
+                return True
+        wb.close()
+        return False
 
 
 def list_currencies() -> list[str]:
