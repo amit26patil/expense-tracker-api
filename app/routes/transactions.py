@@ -2,11 +2,12 @@ import json
 import re
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from google.genai import types
 
 from app import google_sheet_store as excel_store
+from app.auth import UserModel, get_current_user
 from app.models import (
     BulkTransactionCreate,
     BulkTransactionResponse,
@@ -16,7 +17,11 @@ from app.models import (
 )
 from app.routes.upload import get_or_create_session, runner
 
-router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+router = APIRouter(
+    prefix="/api/transactions",
+    tags=["transactions"],
+    dependencies=[Depends(get_current_user)],
+)
  
 
 

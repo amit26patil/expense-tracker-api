@@ -4,8 +4,10 @@ from pathlib import Path
 
 import boto3
 import xlrd
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+
+from app.auth import UserModel, get_current_user
 
 from google.adk.agents import Agent,LlmAgent
 from google.adk.models.lite_llm import LiteLlm
@@ -14,7 +16,11 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService, Session
 from google.genai import types
 
-router = APIRouter(prefix="/api", tags=["upload"])
+router = APIRouter(
+    prefix="/api",
+    tags=["upload"],
+    dependencies=[Depends(get_current_user)],
+)
 
 HEADER_ROW = 12
 

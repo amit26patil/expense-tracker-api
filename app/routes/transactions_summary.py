@@ -1,8 +1,9 @@
 from collections import defaultdict
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app import google_sheet_store as excel_store
+from app.auth import UserModel, get_current_user
 from app.models import (
     CategoryDetail,
     DaySummary,
@@ -15,6 +16,7 @@ from app.models import (
 summary_router = APIRouter(
     prefix="/api/transaction-summary",
     tags=["transaction_summary"],
+    dependencies=[Depends(get_current_user)],
 )
 
 

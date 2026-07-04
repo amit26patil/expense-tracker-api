@@ -1,11 +1,16 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import google_sheet_store as excel_store
+from app.auth import UserModel, get_current_user
 from app.models import CategoryCreate, CategoryUpdate, CurrencySetting
 
-router = APIRouter(prefix="/api", tags=["meta"])
+router = APIRouter(
+    prefix="/api",
+    tags=["meta"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get(
