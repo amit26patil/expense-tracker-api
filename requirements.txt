@@ -9,3 +9,4 @@ mangum
 google-adk==1.33.0
 boto3==1.43.6
 requests>=2.31.0
+uuid6

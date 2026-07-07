@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query
 
-from app import google_sheet_store as excel_store
+from app import s3_store as excel_store
 from app.auth import UserModel, get_current_user
 from app.models import (
     CategoryDetail,
@@ -29,8 +29,9 @@ summary_router = APIRouter(
 def get_month_summary(
     year: int = Query(..., ge=2000, description="Year (e.g. 2026)"),
     month: int = Query(..., ge=1, le=12, description="Month (1-12)"),
+    user: UserModel = Depends(get_current_user),
 ) -> MonthSummary:
-    transactions = excel_store.list_transactions(year=year, month=month)
+    transactions = excel_store.list_transactions(user.email, year=year, month=month)
 
     total_income: dict[str, float] = defaultdict(float)
     total_expense: dict[str, float] = defaultdict(float)
@@ -89,8 +90,9 @@ def get_month_summary(
 def get_month_detail(
     year: int = Query(..., ge=2000, description="Year (e.g. 2026)"),
     month: int = Query(..., ge=1, le=12, description="Month (1-12)"),
+    user: UserModel = Depends(get_current_user),
 ) -> MonthDetail:
-    transactions = excel_store.list_transactions(year=year, month=month)
+    transactions = excel_store.list_transactions(user.email, year=year, month=month)
 
     total_income: dict[str, float] = defaultdict(float)
     total_expense: dict[str, float] = defaultdict(float)

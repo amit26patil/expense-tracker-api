@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from google.genai import types
 
-from app import google_sheet_store as excel_store
+from app import s3_store as excel_store
 from app.auth import UserModel, get_current_user
 from app.models import (
     BulkTransactionCreate,
@@ -22,7 +22,7 @@ router = APIRouter(
     tags=["transactions"],
     dependencies=[Depends(get_current_user)],
 )
- 
+
 
 
 @router.get(
@@ -35,8 +35,9 @@ def get_transactions(
     year: Optional[int] = Query(default=None, description="Filter by year"),
     month: Optional[int] = Query(default=None, ge=1, le=12, description="Filter by month"),
     day: Optional[int] = Query(default=None, ge=1, le=31, description="Filter by day"),
+    user: UserModel = Depends(get_current_user),
 ) -> list[Transaction]:
-    return excel_store.list_transactions(year=year, month=month, day=day)
+    return excel_store.list_transactions(user.email, year=year, month=month, day=day)
 
 
 @router.get(
@@ -46,8 +47,8 @@ def get_transactions(
     description="Retrieve a single transaction by its ID.",
     responses={404: {"description": "Transaction not found"}},
 )
-def get_transaction(tx_id: int) -> Transaction:
-    tx = excel_store.get_transaction(tx_id)
+def get_transaction(tx_id: str, user: UserModel = Depends(get_current_user)) -> Transaction:
+    tx = excel_store.get_transaction(user.email, tx_id)
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return tx
@@ -60,8 +61,8 @@ def get_transaction(tx_id: int) -> Transaction:
     summary="Create a transaction",
     description="Create a new expense or income transaction.",
 )
-def create_transaction(payload: TransactionCreate) -> Transaction:
-    return excel_store.create_transaction(payload)
+def create_transaction(payload: TransactionCreate, user: UserModel = Depends(get_current_user)) -> Transaction:
+    return excel_store.create_transaction(user.email, payload)
 
 
 @router.post(
@@ -71,10 +72,10 @@ def create_transaction(payload: TransactionCreate) -> Transaction:
     summary="Create transactions in bulk",
     description="Create multiple expense or income transactions at once.",
 )
-def create_bulk_transactions(payload: BulkTransactionCreate) -> BulkTransactionResponse:
+def create_bulk_transactions(payload: BulkTransactionCreate, user: UserModel = Depends(get_current_user)) -> BulkTransactionResponse:
     if not payload.transactions:
         return BulkTransactionResponse(count=0, transactions=[])
-    return excel_store.create_bulk_transactions(payload.transactions)
+    return excel_store.create_bulk_transactions(user.email, payload.transactions)
 
 
 @router.put(
@@ -84,8 +85,8 @@ def create_bulk_transactions(payload: BulkTransactionCreate) -> BulkTransactionR
     description="Update an existing transaction by its ID.",
     responses={404: {"description": "Transaction not found"}},
 )
-def update_transaction(tx_id: int, payload: TransactionUpdate) -> Transaction:
-    tx = excel_store.update_transaction(tx_id, payload)
+def update_transaction(tx_id: str, payload: TransactionUpdate, user: UserModel = Depends(get_current_user)) -> Transaction:
+    tx = excel_store.update_transaction(user.email, tx_id, payload)
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return tx
@@ -98,8 +99,8 @@ def update_transaction(tx_id: int, payload: TransactionUpdate) -> Transaction:
     description="Delete a transaction by its ID.",
     responses={404: {"description": "Transaction not found"}},
 )
-def delete_transaction(tx_id: int) -> None:
-    if not excel_store.delete_transaction(tx_id):
+def delete_transaction(tx_id: str, user: UserModel = Depends(get_current_user)) -> None:
+    if not excel_store.delete_transaction(user.email, tx_id):
         raise HTTPException(status_code=404, detail="Transaction not found")
 
 
@@ -108,7 +109,7 @@ def delete_transaction(tx_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 class TransactionLine(BaseModel):
-    id: int
+    id: str
     to: str = ""
     comments: str = ""
     withdrawal: float = 0.0

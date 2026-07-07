@@ -42,7 +42,7 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    date: Optional[Union[str, date]] = None
+    date: Union[str, date]
     type: Optional[TransactionType] = None
     category: Optional[str] = Field(default=None, min_length=1, max_length=100)
     amount: Optional[float] = Field(default=None, gt=0)
@@ -51,14 +51,12 @@ class TransactionUpdate(BaseModel):
 
     @field_validator("date", mode="before")
     @classmethod
-    def coerce_date(cls, v: Union[str, date, None]) -> Optional[date]:
-        if v is None:
-            return None
+    def coerce_date(cls, v: Union[str, date]) -> date:
         return _parse_date(v)
 
 
 class Transaction(BaseModel):
-    id: int
+    id: str
     date: date
     type: TransactionType
     category: str
